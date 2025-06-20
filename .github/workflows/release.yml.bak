@@ -1,70 +1,60 @@
-# 定义工作流程的名称
 name: Build and Release
 
-# 当向仓库推送以 v 开头的标签（例如 v1.0.0）时触发此工作流程
-# 用于自动化版本发布，确保版本号通过 Git 标签管理（符合语义化版本规范）
 on:
   push:
     tags:
       - 'v*'  # 当推送以 v 开头的 tag 时触发，如 v1.0.0
 
-# 授予工作流程对仓库内容的写入权限，允许它创建 Release
 permissions:
   contents: write  # 需要写权限来创建 release
 
-# 在多平台（Linux AMD64 和 ARM64）上构建二进制文件
 jobs:
   build:
     runs-on: ubuntu-latest
     strategy:
       matrix:
         # 定义要构建的目标平台
-        # 通过策略矩阵定义交叉编译的目标平台
         include:
           - goos: linux
             goarch: amd64
-            suffix: linux-amd64  # 用于生成不同平台的文件名后缀（如 linux-amd64）
+            suffix: linux-amd64
           - goos: linux
             goarch: arm64
             suffix: linux-arm64
 
     steps:
-      - name: Checkout code  # 将仓库代码检出到工作环境
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Go  # 安装指定版本的 Go（此处为 1.21）
+      - name: Set up Go
         uses: actions/setup-go@v5  # 更新到 v5
         with:
           go-version: '1.21'
 
-      - name: Get dependencies  # 清理 Go 模块依赖，确保依赖项最新且一致
+      - name: Get dependencies
         run: go mod tidy
 
       - name: Extract version from tag
         id: get_version
-        # 从推送的标签（如 v1.0.0）中提取版本号，保存到 VERSION 变量
-        # GITHUB_REF 是触发工作流程的标签引用（例如 refs/tags/v1.0.0）
-        # ${GITHUB_REF#refs/tags/} 会移除前缀，得到 v1.0.0
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Build binary  # 交叉编译生成指定平台的二进制文件
+      - name: Build binary
         env:
-          GOOS: ${{ matrix.goos }}  # 目标操作系统和架构
-          GOARCH: ${{ matrix.goarch }}  # 目标操作系统和架构
-          CGO_ENABLED: 0  # 禁用 CGO，生成静态二进制文件
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
         run: |
           # 使用 ldflags 在构建时设置版本信息
-          # -ldflags：注入版本信息到 main.version 变量（便于程序显示版本号）
-          # s -w：减小二进制文件体积（移除调试符号）
-          go build -ldflags "-X main.version=${{ steps.get_version.outputs.VERSION }} -s -w" -o myapp-${{ matrix.suffix }} .
+          go build -ldflags "-X main.version=${{ steps.get_version.outputs.VERSION }} -s -w" \
+            -o myapp-${{ matrix.suffix }} .
 
-      - name: Create tarball  # 将二进制文件打包为 .tar.gz
+      - name: Create tarball
         run: |
           tar -czf myapp-${{ matrix.suffix }}.tar.gz myapp-${{ matrix.suffix }}
           # 生成 SHA256 校验和
           sha256sum myapp-${{ matrix.suffix }}.tar.gz > myapp-${{ matrix.suffix }}.tar.gz.sha256
 
-      - name: Upload artifacts  # 将打包后的文件上传到 GitHub Actions 的临时存储空间（Artifacts）
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4  # 更新到 v4
         with:
           name: myapp-${{ matrix.suffix }}
@@ -73,33 +63,32 @@ jobs:
             myapp-${{ matrix.suffix }}.tar.gz.sha256
 
   release:
-    needs: build  # 在 build 任务完成后，创建 GitHub Release 并上传构建产物
+    needs: build
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout code  # 确保 Release 步骤能访问到代码（某些 Actions 可能需要访问仓库文件）
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Extract version from tag  # 与 build 任务相同，再次提取版本号
+      - name: Extract version from tag
         id: get_version
         run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Download all artifacts  # 将 build 任务上传的产物下载到 artifacts 目录
+      - name: Download all artifacts
         uses: actions/download-artifact@v4  # 更新到 v4
         with:
           path: artifacts
 
-      - name: Display structure of downloaded files  # 调试步骤，确认下载的产物路径和文件结构正确
+      - name: Display structure of downloaded files
         run: ls -la artifacts/
 
-      - name: Create Release with Assets  # 创建正式的 GitHub Release，并上传构建产物
+      - name: Create Release with Assets
         uses: softprops/action-gh-release@v1  # 使用现代化的 release action
         with:
-          tag_name: ${{ steps.get_version.outputs.VERSION }}  # 使用推送的标签作为 Release 的标签
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
           name: Release ${{ steps.get_version.outputs.VERSION }}
           draft: false
           prerelease: false
-          generate_release_notes: true  # 自动生成 Release 说明（GitHub 根据提交历史生成）
-          # 自定义 Release 正文内容（包含下载链接、校验和、使用说明）
+          generate_release_notes: true  # 自动生成 release notes
           body: |
             ## 🚀 Release ${{ steps.get_version.outputs.VERSION }}
 
@@ -140,4 +129,4 @@ jobs:
             artifacts/myapp-linux-arm64/myapp-linux-arm64.tar.gz
             artifacts/myapp-linux-arm64/myapp-linux-arm64.tar.gz.sha256
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}  # 通过 GITHUB_TOKEN 授权操作
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

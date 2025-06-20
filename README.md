@@ -78,36 +78,3 @@ docker run -p 8080:8080 my-go-app
 ```bash
 docker run -p 8080:8080 yourusername/my-go-app:latest
 ```
-
-## Configuration
-
-The application can be configured using environment variables:
-- `PORT` - Port to listen on (default: 8080)
-```
-
-## 使用说明
-
-1. **创建仓库**：在GitHub上创建一个新仓库
-2. **克隆并添加代码**：将上述文件添加到你的仓库中
-3. **配置secrets**（如果需要Docker功能）：
-   - `DOCKER_USERNAME` - Docker Hub用户名
-   - `DOCKER_PASSWORD` - Docker Hub访问令牌
-4. **推送代码**：
-   ```bash
-   git add .
-   git commit -m "Initial commit"
-   git push origin main
-```
-5. **创建发布版本**：
-   ```bash
-   git tag v1.0.0
-   git push origin v1.0.0
-   ```
-
-这个配置会自动：
-- 运行测试
-- 构建多平台二进制文件
-- 创建GitHub释出
-- 构建Docker镜像（可选）
-
-每次推送代码或创建tag时，GitHub Actions都会自动运行构建流程。
