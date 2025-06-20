@@ -1,0 +1,152 @@
+name: Build and Release
+
+on:
+  push:
+    tags:
+      - 'v*'  # 当推送以 v 开头的 tag 时触发，如 v1.0.0
+
+permissions:
+  contents: write  # 需要写权限来创建 release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # 定义要构建的目标平台
+        include:
+          - goos: linux
+            goarch: amd64
+            suffix: linux-amd64
+          - goos: linux
+            goarch: arm64
+            suffix: linux-arm64
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: '1.21'  # 使用Go 1.21，你可以根据需要调整版本
+
+      - name: Get dependencies
+        run: go mod tidy
+
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Build binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+        run: |
+          # 使用 ldflags 在构建时设置版本信息
+          go build -ldflags "-X main.version=${{ steps.get_version.outputs.VERSION }} -s -w" \
+            -o myapp-${{ matrix.suffix }} .
+
+      - name: Create tarball
+        run: |
+          tar -czf myapp-${{ matrix.suffix }}.tar.gz myapp-${{ matrix.suffix }}
+          # 生成 SHA256 校验和
+          sha256sum myapp-${{ matrix.suffix }}.tar.gz > myapp-${{ matrix.suffix }}.tar.gz.sha256
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: myapp-${{ matrix.suffix }}
+          path: |
+            myapp-${{ matrix.suffix }}.tar.gz
+            myapp-${{ matrix.suffix }}.tar.gz.sha256
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: get_version
+        run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Create Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ steps.get_version.outputs.VERSION }}
+          release_name: Release ${{ steps.get_version.outputs.VERSION }}
+          draft: false
+          prerelease: false
+          body: |
+            ## 🚀 Release ${{ steps.get_version.outputs.VERSION }}
+
+            ### 📦 Downloads
+
+            | Platform | Architecture | Download |
+            |----------|--------------|----------|
+            | Linux | AMD64 | [myapp-linux-amd64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/myapp-linux-amd64.tar.gz) |
+            | Linux | ARM64 | [myapp-linux-arm64.tar.gz](https://github.com/${{ github.repository }}/releases/download/${{ steps.get_version.outputs.VERSION }}/myapp-linux-arm64.tar.gz) |
+
+            ### 🔐 Checksums
+            SHA256 checksums are provided for each binary to verify integrity.
+
+            ### 🛠️ Installation
+
+            1. Download the appropriate binary for your platform
+            2. Extract: `tar -xzf myapp-<platform>.tar.gz`
+            3. Make executable: `chmod +x myapp-<platform>`
+            4. Run: `./myapp-<platform>`
+
+            ### 🌟 What's New
+
+            <!-- Add your release notes here -->
+            - Bug fixes and improvements
+
+      - name: Upload Linux AMD64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./myapp-linux-amd64/myapp-linux-amd64.tar.gz
+          asset_name: myapp-linux-amd64.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload Linux AMD64 Checksum
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./myapp-linux-amd64/myapp-linux-amd64.tar.gz.sha256
+          asset_name: myapp-linux-amd64.tar.gz.sha256
+          asset_content_type: text/plain
+
+      - name: Upload Linux ARM64
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./myapp-linux-arm64/myapp-linux-arm64.tar.gz
+          asset_name: myapp-linux-arm64.tar.gz
+          asset_content_type: application/gzip
+
+      - name: Upload Linux ARM64 Checksum
+        uses: actions/upload-release-asset@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./myapp-linux-arm64/myapp-linux-arm64.tar.gz.sha256
+          asset_name: myapp-linux-arm64.tar.gz.sha256
+          asset_content_type: text/plain
